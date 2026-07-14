@@ -1,0 +1,4 @@
+torch>=2.7,<2.9
+onnx>=1.16,<2
+onnxruntime>=1.19,<2
+numpy>=1.26,<3

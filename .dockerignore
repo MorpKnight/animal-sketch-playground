@@ -1,0 +1,7 @@
+.git
+.github
+node_modules
+dist
+public/ort
+*.tsbuildinfo
+.DS_Store
