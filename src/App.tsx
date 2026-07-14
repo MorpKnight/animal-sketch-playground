@@ -31,9 +31,11 @@ function App() {
   useEffect(() => {
     runtime.current.prepare()
       .then(() => setStatus('ready'))
-      .catch(() => {
+      .catch((cause: unknown) => {
+        console.error('Model initialization failed:', cause)
         setStatus('error')
-        setError('Model could not be loaded. Refresh the page and try again.')
+        const detail = cause instanceof Error ? cause.message : String(cause)
+        setError(`Model could not be loaded: ${detail}`)
       })
   }, [])
 
@@ -69,9 +71,11 @@ function App() {
       const classification = await runtime.current.classify(strokes)
       setResult(classification)
       setStatus('ready')
-    } catch {
+    } catch (cause: unknown) {
+      console.error('Classification failed:', cause)
       setStatus('error')
-      setError('Classification did not complete. Check the model files and try again.')
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      setError(`Classification did not complete: ${detail}`)
     }
   }
 
