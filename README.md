@@ -12,9 +12,9 @@ sketch entirely in their browser.
 - Static Nginx container for homelab deployment
 
 The site serves a 6.79 MB ONNX artifact locally and evaluates it on the
-visitor's device. A sketch is sent to the local dataset API only after the
-visitor confirms a constrained animal label and explicitly consents to share
-the anonymous contribution.
+visitor's device. Visitors can choose once whether to share anonymous sketches.
+For opted-in visitors, a candidate is saved after inference; optional feedback
+can later upgrade that candidate to a user-confirmed or user-corrected label.
 
 ## Run locally
 
@@ -46,8 +46,9 @@ See [deployment notes](docs/deployment.md) for a reverse-proxy deployment.
 
 Contributions are stored in the Docker volume `animal-sketch-dataset-data` as
 SQLite metadata, normalized 64x64 PNG model inputs, and raw normalized stroke
-JSON. They are always stored as `pending`; no collected example is used for
-training automatically.
+JSON. Each example is `pending`; no collected example is used for training
+automatically. `label_source` distinguishes `model_candidate`,
+`user_confirmed`, `user_corrected`, and `user_rejected_unlabeled` records.
 
 Open `/admin` to sign in and inspect submissions. The dashboard can export
 filtered metadata as CSV or a ZIP containing `metadata.csv`, `images/`, and

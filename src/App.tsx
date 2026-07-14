@@ -10,7 +10,9 @@ import {
   Trash2,
 } from 'lucide-react'
 import { DrawingCanvas } from './features/drawing/DrawingCanvas'
+import { DatasetConsentModal } from './features/dataset/DatasetConsentModal'
 import { DatasetFeedback } from './features/dataset/DatasetFeedback'
+import { createDatasetCandidate, type DatasetSubmission } from './features/dataset/submissions'
 import { hasDrawableInk } from './model/preprocess'
 import { SketchModelRuntime } from './model/runtime'
 import { animalContext, displayLabel } from './model/taxonomy'
@@ -22,6 +24,14 @@ type RuntimeStatus = 'loading' | 'ready' | 'classifying' | 'error'
 
 const modelPage = 'https://huggingface.co/morpknight/animal-sketch-classifier-coreml'
 const sourcePage = 'https://github.com/MorpKnight/animal-sketch-coreml'
+const consentKey = 'animal-sketch-dataset-consent-v1'
+
+type DatasetConsent = 'share' | 'local' | null
+
+function initialDatasetConsent(): DatasetConsent {
+  const saved = window.localStorage.getItem(consentKey)
+  return saved === 'share' || saved === 'local' ? saved : null
+}
 
 function PlaygroundApp() {
   const runtime = useRef(new SketchModelRuntime())
@@ -29,6 +39,10 @@ function PlaygroundApp() {
   const [status, setStatus] = useState<RuntimeStatus>('loading')
   const [result, setResult] = useState<Classification | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [datasetConsent, setDatasetConsent] = useState<DatasetConsent>(initialDatasetConsent)
+  const [datasetSubmission, setDatasetSubmission] = useState<DatasetSubmission | null>(null)
+  const [isSavingCandidate, setIsSavingCandidate] = useState(false)
+  const [datasetSaveError, setDatasetSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     runtime.current.prepare()
@@ -53,12 +67,16 @@ function PlaygroundApp() {
   const onDrawingChange = (next: Stroke[]) => {
     setStrokes(next)
     if (result) setResult(null)
+    setDatasetSubmission(null)
+    setDatasetSaveError(null)
     if (error) setError(null)
   }
 
   const clearDrawing = () => {
     setStrokes([])
     setResult(null)
+    setDatasetSubmission(null)
+    setDatasetSaveError(null)
     setError(null)
   }
 
@@ -72,6 +90,18 @@ function PlaygroundApp() {
     try {
       const classification = await runtime.current.classify(strokes)
       setResult(classification)
+      setDatasetSubmission(null)
+      setDatasetSaveError(null)
+      if (datasetConsent === 'share') {
+        setIsSavingCandidate(true)
+        try {
+          setDatasetSubmission(await createDatasetCandidate(classification, strokes))
+        } catch (cause) {
+          setDatasetSaveError(cause instanceof Error ? cause.message : 'Sketch could not be saved for review.')
+        } finally {
+          setIsSavingCandidate(false)
+        }
+      }
       setStatus('ready')
     } catch (cause: unknown) {
       console.error('Classification failed:', cause)
@@ -174,7 +204,7 @@ function PlaygroundApp() {
                   </div>
                 ))}
               </div>
-              <DatasetFeedback key={result.inputPreview} classification={result} strokes={strokes} />
+              {datasetConsent === 'share' && <DatasetFeedback key={result.inputPreview} classification={result} submission={datasetSubmission} isSavingCandidate={isSavingCandidate} saveError={datasetSaveError} />}
               <button className="reset-link" type="button" onClick={clearDrawing}>
                 <RotateCcw size={15} aria-hidden="true" /> New drawing
               </button>
@@ -196,6 +226,7 @@ function PlaygroundApp() {
           <a href={sourcePage} target="_blank" rel="noreferrer"><Code2 size={15} aria-hidden="true" /> Source</a>
         </nav>
       </footer>
+      {datasetConsent === null && <DatasetConsentModal onChoose={(choice) => { window.localStorage.setItem(consentKey, choice); setDatasetConsent(choice) }} />}
     </main>
   )
 }

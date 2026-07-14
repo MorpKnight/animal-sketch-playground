@@ -6,14 +6,17 @@ type Summary = {
   total: number
   pending: number
   confirmed: number
+  corrected: number
+  candidates: number
   labels: Array<{ label: string; count: number }>
 }
 
 type Submission = {
   id: string
   createdAt: string
-  feedback: 'confirmed' | 'corrected'
-  userLabel: string
+  feedback: 'confirmed' | 'corrected' | null
+  labelSource: 'model_candidate' | 'user_confirmed' | 'user_corrected' | 'user_rejected_unlabeled'
+  userLabel: string | null
   predictedLabel: string | null
   predictions: Array<{ label: string; confidence: number }>
   modelVersion: string
@@ -22,6 +25,13 @@ type Submission = {
 }
 
 type SessionState = 'loading' | 'loggedOut' | 'ready'
+
+function sourceDescription(submission: Submission) {
+  if (submission.labelSource === 'user_confirmed') return 'User confirmed model result'
+  if (submission.labelSource === 'user_corrected') return `User corrected from ${displayLabel(submission.predictedLabel ?? 'unknown')}`
+  if (submission.labelSource === 'user_rejected_unlabeled') return 'User rejected result without a label'
+  return 'Model candidate awaiting review'
+}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'include', ...init })
@@ -129,8 +139,8 @@ export function AdminApp() {
       <section className="admin-stats" aria-label="Dataset summary">
         <article><span>Total submissions</span><strong>{summary?.total ?? 0}</strong></article>
         <article><span>Pending review</span><strong>{summary?.pending ?? 0}</strong></article>
-        <article><span>User confirmed</span><strong>{summary?.confirmed ?? 0}</strong></article>
-        <article><span>Data policy</span><strong className="policy-value"><ShieldCheck size={18} aria-hidden="true" /> Pending first</strong></article>
+        <article><span>User-labelled</span><strong>{(summary?.confirmed ?? 0) + (summary?.corrected ?? 0)}</strong></article>
+        <article><span>Model-only</span><strong className="policy-value"><ShieldCheck size={18} aria-hidden="true" /> {summary?.candidates ?? 0}</strong></article>
       </section>
 
       <section className="admin-panel">
@@ -143,8 +153,8 @@ export function AdminApp() {
         {error && <p className="feedback-error" role="alert">{error}</p>}
         {submissions.length ? <div className="submission-list">
           {submissions.map((submission) => <article className="submission-row" key={submission.id}>
-            <img src={submission.imageUrl} alt={`Model input for ${displayLabel(submission.userLabel)}`} width="64" height="64" />
-            <div className="submission-main"><strong>{displayLabel(submission.userLabel)}</strong><span>{submission.feedback === 'confirmed' ? 'User confirmed' : `Corrected from ${displayLabel(submission.predictedLabel ?? 'unknown')}`}</span><small>{new Date(submission.createdAt).toLocaleString()} · {submission.modelVersion}</small></div>
+            <img src={submission.imageUrl} alt={`Model input for ${displayLabel(submission.userLabel ?? submission.predictedLabel ?? 'unknown')}`} width="64" height="64" />
+            <div className="submission-main"><strong>{displayLabel(submission.userLabel ?? submission.predictedLabel ?? 'Unknown')}</strong><span>{sourceDescription(submission)}</span><small>{new Date(submission.createdAt).toLocaleString()} · {submission.modelVersion}</small></div>
             <div className="submission-score"><span>{submission.status}</span><strong>{(submission.predictions[0]?.confidence ?? 0) * 100 | 0}%</strong></div>
           </article>)}
         </div> : <p className="admin-empty">No submissions match these filters yet.</p>}

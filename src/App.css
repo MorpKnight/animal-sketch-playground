@@ -111,6 +111,11 @@
 .feedback-error { align-items: center; color: #a74435; display: flex; font-size: 12px; gap: 6px; line-height: 1.4; margin: 0; }
 .feedback-success { align-items: center; color: var(--success); display: flex; font-size: 13px; font-weight: 650; grid-template-columns: auto 1fr; }
 .feedback-success p { margin: 0; }
+.consent-overlay { align-items: center; background: rgb(23 35 43 / 0.68); display: flex; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 10; }
+.consent-modal { background: #fff; border: 1px solid #d8e0e0; border-radius: var(--radius); box-shadow: 0 18px 55px rgb(0 0 0 / 0.22); display: grid; gap: 14px; max-width: 460px; padding: 28px; }
+.consent-modal h2 { color: var(--ink); font-size: 28px; letter-spacing: 0; line-height: 1.05; margin: 0; }
+.consent-modal > p:not(.eyebrow) { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0; }
+.consent-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 
 .empty-result { align-items: flex-start; display: flex; flex-direction: column; margin-top: 48px; max-width: 240px; }
 .empty-glyph { align-items: center; background: #e2f0f0; border-radius: 6px; color: var(--teal); display: inline-flex; height: 48px; justify-content: center; width: 48px; }
@@ -180,6 +185,8 @@
   .button-primary { min-width: 0; }
   .footer { align-items: flex-start; flex-direction: column; gap: 13px; }
   .feedback-fields { grid-template-columns: 1fr; }
+  .consent-actions { flex-direction: column; }
+  .consent-actions .button { width: 100%; }
   .admin-shell { padding: 24px 16px; }
   .admin-topbar { align-items: flex-start; gap: 18px; }
   .admin-topbar h1 { font-size: 28px; }

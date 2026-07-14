@@ -20,16 +20,50 @@ database.exec(`
   CREATE TABLE IF NOT EXISTS submissions (
     id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
-    feedback TEXT NOT NULL CHECK(feedback IN ('confirmed', 'corrected')),
-    user_label TEXT NOT NULL,
+    feedback TEXT CHECK(feedback IN ('confirmed', 'corrected')),
+    label_source TEXT NOT NULL CHECK(label_source IN ('model_candidate', 'user_confirmed', 'user_corrected', 'user_rejected_unlabeled')),
+    user_label TEXT,
     predicted_label TEXT,
     predictions_json TEXT NOT NULL,
     strokes_json TEXT NOT NULL,
     image_file TEXT NOT NULL,
     model_version TEXT NOT NULL,
     preprocess_version TEXT NOT NULL,
+    feedback_token_hash TEXT,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected'))
   );
+`)
+
+const submissionColumns = database.prepare('PRAGMA table_info(submissions)').all().map((column) => column.name)
+if (!submissionColumns.includes('label_source')) {
+  database.exec(`
+    BEGIN;
+    CREATE TABLE submissions_next (
+      id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      feedback TEXT CHECK(feedback IN ('confirmed', 'corrected')),
+      label_source TEXT NOT NULL CHECK(label_source IN ('model_candidate', 'user_confirmed', 'user_corrected', 'user_rejected_unlabeled')),
+      user_label TEXT,
+      predicted_label TEXT,
+      predictions_json TEXT NOT NULL,
+      strokes_json TEXT NOT NULL,
+      image_file TEXT NOT NULL,
+      model_version TEXT NOT NULL,
+      preprocess_version TEXT NOT NULL,
+      feedback_token_hash TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected'))
+    );
+    INSERT INTO submissions_next (id, created_at, feedback, label_source, user_label, predicted_label, predictions_json, strokes_json, image_file, model_version, preprocess_version, status)
+      SELECT id, created_at, feedback,
+        CASE feedback WHEN 'confirmed' THEN 'user_confirmed' ELSE 'user_corrected' END,
+        user_label, predicted_label, predictions_json, strokes_json, image_file, model_version, preprocess_version, status
+      FROM submissions;
+    DROP TABLE submissions;
+    ALTER TABLE submissions_next RENAME TO submissions;
+    COMMIT;
+  `)
+}
+database.exec(`
   CREATE INDEX IF NOT EXISTS submissions_created_at ON submissions(created_at DESC);
   CREATE INDEX IF NOT EXISTS submissions_label ON submissions(user_label);
 `)
@@ -149,8 +183,6 @@ function validPredictions(predictions) {
 
 function parseSubmission(payload) {
   if (!payload || typeof payload !== 'object') throw new Error('Submission is required.')
-  if (!allowedLabels.has(payload.userLabel)) throw new Error('Choose an animal from the supported label list.')
-  if (payload.feedback !== 'confirmed' && payload.feedback !== 'corrected') throw new Error('Feedback is invalid.')
   if (!validStrokes(payload.strokes)) throw new Error('Drawing data is invalid.')
   if (!validPredictions(payload.predictions)) throw new Error('Predictions are invalid.')
   if (typeof payload.modelVersion !== 'string' || payload.modelVersion.length > 80) throw new Error('Model version is invalid.')
@@ -164,11 +196,28 @@ function parseSubmission(payload) {
   return { ...payload, image }
 }
 
+function parseFeedback(payload, predictedLabel) {
+  if (!payload || typeof payload !== 'object' || typeof payload.feedbackToken !== 'string' || payload.feedbackToken.length < 20) {
+    throw new Error('Feedback token is invalid.')
+  }
+  if (payload.action === 'confirmed') {
+    if (!allowedLabels.has(predictedLabel)) throw new Error('This prediction needs a selected animal label.')
+    return { feedback: 'confirmed', labelSource: 'user_confirmed', userLabel: predictedLabel }
+  }
+  if (payload.action === 'corrected') {
+    if (!allowedLabels.has(payload.userLabel)) throw new Error('Choose an animal from the supported label list.')
+    return { feedback: 'corrected', labelSource: 'user_corrected', userLabel: payload.userLabel }
+  }
+  if (payload.action === 'rejected') return { feedback: null, labelSource: 'user_rejected_unlabeled', userLabel: null }
+  throw new Error('Feedback action is invalid.')
+}
+
 function toSubmission(row) {
   return {
     id: row.id,
     createdAt: row.created_at,
     feedback: row.feedback,
+    labelSource: row.label_source,
     userLabel: row.user_label,
     predictedLabel: row.predicted_label,
     predictions: JSON.parse(row.predictions_json),
@@ -189,8 +238,8 @@ function listRows(searchParams) {
     values.push(status)
   }
   if (label && allowedLabels.has(label)) {
-    clauses.push('user_label = ?')
-    values.push(label)
+    clauses.push('(user_label = ? OR (user_label IS NULL AND predicted_label = ?))')
+    values.push(label, label)
   }
   const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''
   return database.prepare(`SELECT * FROM submissions${where} ORDER BY created_at DESC`).all(...values)
@@ -202,11 +251,11 @@ function csvEscape(value) {
 }
 
 function metadataCsv(rows) {
-  const headings = ['id', 'created_at', 'status', 'feedback', 'user_label', 'predicted_label', 'top_predictions', 'model_version', 'preprocess_version', 'image_file', 'strokes_file']
+  const headings = ['id', 'created_at', 'status', 'label_source', 'feedback', 'user_label', 'predicted_label', 'top_predictions', 'model_version', 'preprocess_version', 'image_file', 'strokes_file']
   const lines = [headings.join(',')]
   for (const row of rows) {
     const predictions = JSON.parse(row.predictions_json).map((prediction) => `${prediction.label}:${prediction.confidence}`).join('|')
-    lines.push([row.id, row.created_at, row.status, row.feedback, row.user_label, row.predicted_label, predictions,
+    lines.push([row.id, row.created_at, row.status, row.label_source, row.feedback, row.user_label, row.predicted_label, predictions,
       row.model_version, row.preprocess_version, `images/${row.image_file}`, `strokes/${row.id}.json`].map(csvEscape).join(','))
   }
   return `${lines.join('\n')}\n`
@@ -253,9 +302,11 @@ function zip(entries) {
 function summary() {
   const total = database.prepare('SELECT COUNT(*) AS count FROM submissions').get().count
   const pending = database.prepare("SELECT COUNT(*) AS count FROM submissions WHERE status = 'pending'").get().count
-  const confirmed = database.prepare("SELECT COUNT(*) AS count FROM submissions WHERE feedback = 'confirmed'").get().count
-  const labels = database.prepare('SELECT user_label AS label, COUNT(*) AS count FROM submissions GROUP BY user_label ORDER BY count DESC, user_label ASC').all()
-  return { total, pending, confirmed, labels }
+  const confirmed = database.prepare("SELECT COUNT(*) AS count FROM submissions WHERE label_source = 'user_confirmed'").get().count
+  const corrected = database.prepare("SELECT COUNT(*) AS count FROM submissions WHERE label_source = 'user_corrected'").get().count
+  const candidates = database.prepare("SELECT COUNT(*) AS count FROM submissions WHERE label_source = 'model_candidate'").get().count
+  const labels = database.prepare('SELECT COALESCE(user_label, predicted_label) AS label, COUNT(*) AS count FROM submissions GROUP BY COALESCE(user_label, predicted_label) ORDER BY count DESC, label ASC').all()
+  return { total, pending, confirmed, corrected, candidates, labels }
 }
 
 const server = createServer(async (request, response) => {
@@ -266,12 +317,26 @@ const server = createServer(async (request, response) => {
       const payload = parseSubmission(await readJson(request))
       const id = randomUUID()
       const imageFile = `${id}.png`
+      const feedbackToken = randomBytes(24).toString('base64url')
       writeFileSync(join(dataDir, 'images', imageFile), payload.image, { flag: 'wx' })
-      database.prepare(`INSERT INTO submissions (id, created_at, feedback, user_label, predicted_label, predictions_json, strokes_json, image_file, model_version, preprocess_version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, new Date().toISOString(), payload.feedback, payload.userLabel,
+      database.prepare(`INSERT INTO submissions (id, created_at, feedback, label_source, user_label, predicted_label, predictions_json, strokes_json, image_file, model_version, preprocess_version, feedback_token_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, new Date().toISOString(), null, 'model_candidate', null,
         payload.predictions[0]?.label ?? null, JSON.stringify(payload.predictions), JSON.stringify(payload.strokes), imageFile,
-        payload.modelVersion, payload.preprocessVersion)
-      return send(response, 201, { id, status: 'pending' })
+        payload.modelVersion, payload.preprocessVersion, tokenHash(feedbackToken))
+      return send(response, 201, { id, feedbackToken, status: 'pending' })
+    }
+    if (request.method === 'PATCH' && /^\/api\/submissions\/[^/]+\/feedback$/.test(url.pathname)) {
+      const id = basename(url.pathname.split('/').at(-2))
+      const row = database.prepare('SELECT predicted_label, feedback_token_hash FROM submissions WHERE id = ?').get(id)
+      if (!row) return send(response, 404, { error: 'Submission not found.' })
+      const payload = await readJson(request)
+      const update = parseFeedback(payload, row.predicted_label)
+      if (!row.feedback_token_hash || !timingSafeEqual(Buffer.from(tokenHash(payload.feedbackToken)), Buffer.from(row.feedback_token_hash))) {
+        return send(response, 403, { error: 'Feedback token is invalid.' })
+      }
+      database.prepare('UPDATE submissions SET feedback = ?, label_source = ?, user_label = ? WHERE id = ?')
+        .run(update.feedback, update.labelSource, update.userLabel, id)
+      return send(response, 200, { id, labelSource: update.labelSource })
     }
     if (request.method === 'POST' && url.pathname === '/api/admin/login') {
       if (tooManyAttempts(request)) return send(response, 429, { error: 'Too many attempts. Try again later.' })

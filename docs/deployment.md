@@ -1,9 +1,9 @@
 # Homelab Deployment
 
 The public `playground` container serves the React app and runs ONNX inference
-in the visitor's browser. The private `dataset-api` container stores only
-explicitly consented submissions. It is not exposed on a host port; Nginx
-proxies same-origin `/api/` requests to it.
+in the visitor's browser. The private `dataset-api` container stores opted-in
+submissions. It is not exposed on a host port; Nginx proxies same-origin
+`/api/` requests to it.
 
 ## First run
 
@@ -28,9 +28,11 @@ The named volume `animal-sketch-dataset-data` holds:
 - `images/<submission-id>.png`: exact normalized 64x64 model input.
 - Raw normalized strokes in SQLite, included as JSON in the ZIP export.
 
-Download a filtered snapshot from `/admin` as CSV or ZIP. The application
-never trains on these submissions automatically; review and move approved data
-to the training repository manually.
+Download a filtered snapshot from `/admin` as CSV or ZIP. `label_source` shows
+whether a record is a model candidate, user confirmation, user correction, or
+an unlabeled rejection. The application never trains on these submissions
+automatically; review and move approved data to the training repository
+manually.
 
 For an offline copy of the Docker volume:
 
