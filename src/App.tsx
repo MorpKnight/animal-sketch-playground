@@ -10,10 +10,12 @@ import {
   Trash2,
 } from 'lucide-react'
 import { DrawingCanvas } from './features/drawing/DrawingCanvas'
+import { DatasetFeedback } from './features/dataset/DatasetFeedback'
 import { hasDrawableInk } from './model/preprocess'
 import { SketchModelRuntime } from './model/runtime'
 import { animalContext, displayLabel } from './model/taxonomy'
 import type { Classification, Stroke } from './model/types'
+import { AdminApp } from './admin/AdminApp'
 import './App.css'
 
 type RuntimeStatus = 'loading' | 'ready' | 'classifying' | 'error'
@@ -21,7 +23,7 @@ type RuntimeStatus = 'loading' | 'ready' | 'classifying' | 'error'
 const modelPage = 'https://huggingface.co/morpknight/animal-sketch-classifier-coreml'
 const sourcePage = 'https://github.com/MorpKnight/animal-sketch-coreml'
 
-function App() {
+function PlaygroundApp() {
   const runtime = useRef(new SketchModelRuntime())
   const [strokes, setStrokes] = useState<Stroke[]>([])
   const [status, setStatus] = useState<RuntimeStatus>('loading')
@@ -172,6 +174,7 @@ function App() {
                   </div>
                 ))}
               </div>
+              <DatasetFeedback key={result.inputPreview} classification={result} strokes={strokes} />
               <button className="reset-link" type="button" onClick={clearDrawing}>
                 <RotateCcw size={15} aria-hidden="true" /> New drawing
               </button>
@@ -195,6 +198,10 @@ function App() {
       </footer>
     </main>
   )
+}
+
+function App() {
+  return window.location.pathname.startsWith('/admin') ? <AdminApp /> : <PlaygroundApp />
 }
 
 export default App

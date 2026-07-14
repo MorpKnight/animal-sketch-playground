@@ -3,3 +3,5 @@ dist/
 public/ort/
 *.tsbuildinfo
 .DS_Store
+data/
+secrets/admin_password.txt

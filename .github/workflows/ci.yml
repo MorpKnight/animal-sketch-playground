@@ -24,16 +24,31 @@ jobs:
       - run: npm run test
       - run: npm run build
       - uses: docker/setup-buildx-action@v3
+      - name: Create CI admin secret
+        run: |
+          mkdir -p secrets
+          printf '%s' 'ci-admin-password' > secrets/admin_password.txt
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: false
           load: true
           tags: animal-sketch-playground:ci
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          push: false
+          load: true
+          tags: animal-sketch-dataset-api:ci
       - name: Start production container
-        run: docker run --detach --rm --name animal-sketch-playground-ci -p 8080:8080 animal-sketch-playground:ci
+        run: docker compose up --detach
       - name: Verify static runtime asset MIME types
         run: |
           curl --fail --silent --show-error http://127.0.0.1:8080/healthz
           curl --fail --silent --show-error --head http://127.0.0.1:8080/ort/ort-wasm-simd-threaded.mjs | grep -i 'content-type: application/javascript'
           curl --fail --silent --show-error --head http://127.0.0.1:8080/ort/ort-wasm-simd-threaded.wasm | grep -i 'content-type: application/wasm'
+          docker compose ps --status running | grep -q dataset-api
+      - name: Stop production container
+        if: always()
+        run: docker compose down --volumes

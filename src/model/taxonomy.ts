@@ -23,6 +23,17 @@ const labelGroups: Record<string, keyof typeof groups> = {
   frog: 'amphibian', octopus: 'mollusk', snail: 'mollusk', crab: 'crustacean', lobster: 'crustacean',
 }
 
+export const supportedAnimalLabels = Object.keys(labelGroups).sort()
+
+export function labelsForGroup(group: string): string[] {
+  return supportedAnimalLabels.filter((label) => labelGroups[label] === group)
+}
+
+export const animalGroups = Object.entries(groups).map(([id, context]) => ({
+  id,
+  name: context.group,
+}))
+
 export function animalContext(label: string): AnimalContext | null {
   const group = labelGroups[label]
   return group ? groups[group] : null

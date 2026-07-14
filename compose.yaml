@@ -7,8 +7,48 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    depends_on:
+      dataset-api:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp
     security_opt:
       - no-new-privileges:true
+
+  dataset-init:
+    image: busybox:1.37
+    command: ["sh", "-c", "mkdir -p /data/images && chown -R 1000:1000 /data"]
+    user: "0:0"
+    volumes:
+      - dataset-data:/data
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
+  dataset-api:
+    build:
+      context: ./api
+    image: ghcr.io/morpknight/animal-sketch-dataset-api:local
+    container_name: animal-sketch-dataset-api
+    restart: unless-stopped
+    depends_on:
+      dataset-init:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - dataset-data:/data
+    secrets:
+      - admin_password
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  dataset-data:
+    name: animal-sketch-dataset-data
+
+secrets:
+  admin_password:
+    file: ./secrets/admin_password.txt

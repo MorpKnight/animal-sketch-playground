@@ -11,9 +11,10 @@ sketch entirely in their browser.
 - ONNX Runtime Web with the WebAssembly execution provider
 - Static Nginx container for homelab deployment
 
-The site does not upload drawings or send them to an inference API. It serves a
-6.79 MB ONNX artifact locally with the site, then evaluates it on the visitor's
-device.
+The site serves a 6.79 MB ONNX artifact locally and evaluates it on the
+visitor's device. A sketch is sent to the local dataset API only after the
+visitor confirms a constrained animal label and explicitly consents to share
+the anonymous contribution.
 
 ## Run locally
 
@@ -33,11 +34,26 @@ npm run build
 ## Docker
 
 ```sh
+mkdir -p secrets
+printf '%s' 'choose-a-password' > secrets/admin_password.txt
 docker compose up --build -d
 curl http://localhost:8080/healthz
 ```
 
 See [deployment notes](docs/deployment.md) for a reverse-proxy deployment.
+
+## Dataset collection
+
+Contributions are stored in the Docker volume `animal-sketch-dataset-data` as
+SQLite metadata, normalized 64x64 PNG model inputs, and raw normalized stroke
+JSON. They are always stored as `pending`; no collected example is used for
+training automatically.
+
+Open `/admin` to sign in and inspect submissions. The dashboard can export
+filtered metadata as CSV or a ZIP containing `metadata.csv`, `images/`, and
+`strokes/`. The password is read from `secrets/admin_password.txt`, which is
+ignored by Git. It is hashed in memory with scrypt every time the dataset API
+starts; the plaintext secret is never stored in SQLite.
 
 ## Model
 
